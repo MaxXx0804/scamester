@@ -13,6 +13,8 @@ const SALT_ROUNDS = 10;
 function sanitizeEmail(email) { return email.replace(/\./g, ','); }
 function generateCode() { return Math.floor(100000 + Math.random() * 900000).toString(); }
 
+port = process.env.PORT || 3000;
+
 // ✅ Configure email transporter
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -318,6 +320,6 @@ app.post("/login", async (req, res) => {
 });
 //#endregion
 //#endregion
-
-
-module.exports = app;
+app.listen(port, () => {
+  console.log(`Emoji Quiz API running at http://localhost:${port}`);
+});
