@@ -318,8 +318,13 @@ app.post("/login", async (req, res) => {
     res.status(500).json({ error: "Internal server error." });
   }
 });
+
+app.post("/test", async (req, res) => {
+  res.json({ status: "login_success" });
+});
+
 //#endregion
 //#endregion
 app.listen(port, () => {
-  console.log(`Emoji Quiz API running at http://localhost:${port}`);
+  console.log(`API running at http://localhost:${port}`);
 });
