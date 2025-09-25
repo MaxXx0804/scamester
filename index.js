@@ -325,6 +325,10 @@ app.post("/test", async (req, res) => {
 
 //#endregion
 //#endregion
+
 app.listen(port, () => {
-  console.log(`API running at http://localhost:${port}`);
+  console.log(`Server running on port ${port}`);
 });
+
+module.exports = app;
+
