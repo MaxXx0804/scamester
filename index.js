@@ -4,8 +4,15 @@ const bcrypt  = require('bcrypt');
 const cors    = require('cors');
 const db      = require('./db/database');
 const nodemailer = require('nodemailer');
+const axios = require("axios");
+
 
 const app = express();
+
+const HF_BASE_URL = process.env.HF_URL;
+const HF_TOKEN = process.env.HF_API_TOKEN;
+
+
 app.use(cors());
 app.use(express.json());
 
@@ -319,12 +326,91 @@ app.post("/login", async (req, res) => {
   }
 });
 
+
+
+//#endregion
+
+//#region MODEL
+// Home
+app.get("/", (req, res) => {
+  res.json({ status: "running", message: "Node.js API proxy is live!" });
+});
+
+// Create record
+app.post("/model/create", async (req, res) => {
+  try {
+    const result = await callHuggingFace("/create", req.body);
+    res.status(200).json(result);
+  } catch (err) {
+    console.error(err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to create record", details: err.response?.data || err.message });
+  }
+});
+
+// Train learner
+app.post("/model/train", async (req, res) => {
+  try {
+    const result = await callHuggingFace("/train_learner", {});
+    res.status(200).json(result);
+  } catch (err) {
+    console.error(err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to train model", details: err.response?.data || err.message });
+  }
+});
+
+// Predict learner
+app.post("/model/predict", async (req, res) => {
+  try {
+    const result = await callHuggingFace("/predict_learner", req.body);
+    res.status(200).json(result);
+  } catch (err) {
+    console.error(err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to predict learner type", details: err.response?.data || err.message });
+  }
+});
+
+// Get all records (GET method)
+app.get("/model/records", async (req, res) => {
+  try {
+    const result = await axios.get(`${HF_BASE_URL}/records`, {
+      headers: { Authorization: `Bearer ${HF_TOKEN}` }
+    });
+    res.json(result.data);
+  } catch (err) {
+    console.error(err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to get records" });
+  }
+});
+
+// Delete record
+app.delete("/model/records/:id", async (req, res) => {
+  try {
+    const endpoint = `/records/${req.params.id}`;
+    const result = await callHuggingFace(endpoint, {});
+    res.status(200).json(result);
+  } catch (err) {
+    console.error(err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to delete record", details: err.response?.data || err.message });
+  }
+});
+//#endregion
+//#endregion
+
 app.post("/test", async (req, res) => {
   res.json({ status: "login_success" });
 });
 
-//#endregion
-//#endregion
+
+async function callHuggingFace(endpoint, data) {
+  const url = `${HF_BASE_URL}${endpoint}`;
+  const response = await axios.post(url, data, {
+    headers: {
+      Authorization: `Bearer ${HF_TOKEN}`,
+      "Content-Type": "application/json"
+    }
+  });
+  return response.data;
+}
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
