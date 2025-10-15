@@ -279,6 +279,45 @@ app.post("/reset-password/update", async (req, res) => {
   }
 });
 
+app.post("/verify-code", async (req, res) => {
+    const { email, code } = req.body;
+    if (!email || !code) {
+        return res.status(400).json({ error: "Email and code are required." });
+    }
+
+    try {
+        const safeEmail = sanitizeEmail(email);
+
+        // 1. Look for the verification request in the database
+        const snap = await db.ref(`verifications/${safeEmail}`).once("value");
+        if (!snap.exists()) {
+            return res.status(404).json({ error: "No verification request found for this email." });
+        }
+
+        const verificationData = snap.val();
+
+        // 2. Check if the code has expired
+        if (Date.now() > verificationData.expiresAt) {
+            return res.status(410).json({ error: "Verification code has expired." });
+        }
+
+        // 3. Check if the code matches
+        if (verificationData.code !== code) {
+            return res.status(401).json({ error: "Invalid verification code." });
+        }
+
+        // 4. If successful, remove the verification entry to prevent reuse
+        await db.ref(`verifications/${safeEmail}`).remove();
+
+        // 5. Send a success response
+        res.json({ status: "code_verified" });
+
+    } catch (err) {
+        console.error("Verify code error:", err);
+        res.status(500).json({ error: "Internal server error." });
+    }
+});
+
 // Move data from "pending" → "users" if code matches
 app.post("/verify", async (req, res) => {
   const { email, code } = req.body;
