@@ -385,11 +385,12 @@ app.post("/verify", async (req, res) => {
 //#region SIGNUP & LOGIN
 // Hash password, generate code, store in "pending", send email
 app.post("/create-user-direct", async (req, res) => {
-    const { email, password } = req.body;
+    // --- CHANGED: Now accepts 'username' ---
+    const { username, email, password } = req.body;
 
     // 1. Validate input
-    if (!email || !password) {
-        return res.status(400).json({ error: "Email and password are required." });
+    if (!username || !email || !password) {
+        return res.status(400).json({ error: "Username, email, and password are required." });
     }
 
     try {
@@ -400,19 +401,34 @@ app.post("/create-user-direct", async (req, res) => {
         if (userSnap.exists()) {
             return res.status(409).json({ error: "A user with this email already exists." });
         }
+        
+        // --- ADDED: Check if the username is already taken ---
+        // This requires a separate 'usernames' node for efficient lookups.
+        const usernameSnap = await db.ref(`usernames/${username.toLowerCase()}`).once("value");
+        if (usernameSnap.exists()) {
+            return res.status(409).json({ error: "This username is already taken." });
+        }
 
         // 3. Hash the provided password
         const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-
-        // 4. Create the user record directly in the 'users' collection
-        await db.ref(`users/${safeEmail}`).set({
+        
+        // --- ADDED: Use a multi-path update for atomic write ---
+        // This ensures that we either write both the user and username records, or neither.
+        const newUser = {
+            username: username,
             email: email,
             password: hashedPassword,
             createdAt: Date.now() // Store the creation timestamp
-        });
+        };
+
+        const updates = {};
+        updates[`/users/${safeEmail}`] = newUser;
+        updates[`/usernames/${username.toLowerCase()}`] = safeEmail; // Store a mapping for easy lookup
+
+        await db.ref().update(updates);
 
         // 5. Send a success response
-        res.status(201).json({ status: "user_created_successfully", email: email });
+        res.status(201).json({ status: "user_created_successfully", email: email, username: username });
 
     } catch (err) {
         console.error("Direct user creation error:", err);
