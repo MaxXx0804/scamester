@@ -50,6 +50,44 @@ const transporter = nodemailer.createTransport({
 
 //#region RESEND CODE
 // --- RESEND VERIFICATION CODE ---
+app.post("/resend-verification", async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email is required." });
+
+    try {
+        const safeEmail = sanitizeEmail(email);
+
+        // Check if there's an existing verification request
+        const snap = await db.ref(`verifications/${safeEmail}`).once("value");
+        if (!snap.exists()) {
+            return res.status(404).json({ error: "No active verification request found." });
+        }
+
+        const newCode = generateCode();
+        const newExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+        // Update the existing entry with the new code and expiration
+        await db.ref(`verifications/${safeEmail}`).update({
+            code: newCode,
+            expiresAt: newExpires
+        });
+
+        // Send the new code via email
+        await transporter.sendMail({
+            from: `"Scamester" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: "Your New Verification Code",
+            text: `Your new verification code is: ${newCode}\n\nIt will expire in 10 minutes.`
+        });
+
+        res.json({ status: "verification_resent" });
+
+    } catch (err) {
+        console.error("Resend verification error:", err);
+        res.status(500).json({ error: "Internal server error." });
+    }
+});
+
 app.post("/resend", async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "Email required." });
