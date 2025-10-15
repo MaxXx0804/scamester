@@ -165,6 +165,51 @@ app.post("/reset-password", async (req, res) => {
 //#endregion
 
 //#region VERIFICATION
+app.post("/send-verification", async (req, res) => {
+    // 1. Get email from the request body
+    const { email } = req.body;
+    if (!email) {
+        return res.status(400).json({ error: "Email is required." });
+    }
+
+    try {
+        const safeEmail = sanitizeEmail(email);
+
+        // 2. (Optional but Recommended) Check if the user exists before sending a code
+        const userSnap = await db.ref(`users/${safeEmail}`).once("value");
+        if (!userSnap.exists()) {
+            return res.status(404).json({ error: "User not found." });
+        }
+
+        // 3. Generate a new verification code and an expiration time (e.g., 10 minutes)
+        const verificationCode = generateCode();
+        const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes from now
+
+        // 4. Store the code in a temporary location in your database
+        // This prevents cluttering the main user object and is easy to clean up.
+        await db.ref(`verifications/${safeEmail}`).set({
+            email,
+            code: verificationCode,
+            expiresAt,
+        });
+
+        // 5. Send the code to the user's email
+        // Assumes your 'transporter' for nodemailer is already configured
+        await transporter.sendMail({
+            from: `"Scamester" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: "Your Verification Code",
+            text: `Your new verification code is: ${verificationCode}\n\nThis code will expire in 10 minutes.`
+        });
+
+        // 6. Send a success response to the client
+        res.json({ status: "verification_sent" });
+
+    } catch (err) {
+        console.error("Error sending verification code:", err);
+        res.status(500).json({ error: "Internal server error." });
+    }
+});
 app.post("/reset-password/verify", async (req, res) => {
   const { email, code } = req.body;
   if (!email || !code)
