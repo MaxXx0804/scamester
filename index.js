@@ -212,13 +212,18 @@ app.post("/send-verification", async (req, res) => {
 
     try {
         const safeEmail = sanitizeEmail(email);
+        
+        // 2. <<< ADDED: Check if email is already registered in the main users table
+        const userSnap = await db.ref(`users/${safeEmail}`).once("value");
+        if (userSnap.exists()) {
+            return res.status(409).json({ error: "Email is already registered." });
+        }
 
         // 3. Generate a new verification code and an expiration time (e.g., 10 minutes)
         const verificationCode = generateCode();
         const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes from now
 
         // 4. Store the code in a temporary location in your database
-        // This prevents cluttering the main user object and is easy to clean up.
         await db.ref(`verifications/${safeEmail}`).set({
             email,
             code: verificationCode,
@@ -242,6 +247,7 @@ app.post("/send-verification", async (req, res) => {
         res.status(500).json({ error: "Internal server error." });
     }
 });
+
 app.post("/reset-password/verify", async (req, res) => {
   const { email, code } = req.body;
   if (!email || !code)
