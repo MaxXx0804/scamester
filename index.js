@@ -213,12 +213,6 @@ app.post("/send-verification", async (req, res) => {
     try {
         const safeEmail = sanitizeEmail(email);
 
-        // 2. (Optional but Recommended) Check if the user exists before sending a code
-        const userSnap = await db.ref(`users/${safeEmail}`).once("value");
-        if (!userSnap.exists()) {
-            return res.status(404).json({ error: "User not found." });
-        }
-
         // 3. Generate a new verification code and an expiration time (e.g., 10 minutes)
         const verificationCode = generateCode();
         const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes from now
