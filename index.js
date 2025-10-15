@@ -6,8 +6,23 @@ const db      = require('./db/database');
 const nodemailer = require('nodemailer');
 const axios = require("axios");
 
+// Add Firebase Admin SDK
+const admin = require('firebase-admin');
 
 const app = express();
+
+// Initialize Firebase Admin SDK
+// IMPORTANT: Your service account key file must be configured via environment variables.
+try {
+  admin.initializeApp({
+    credential: admin.credential.applicationDefault(),
+    databaseURL: process.env.FIREBASE_DATABASE_URL // Add your Firebase DB URL to .env
+  });
+  console.log("Firebase Admin SDK initialized successfully.");
+} catch (error) {
+  console.error("Firebase Admin SDK initialization error:", error);
+}
+
 
 const HF_BASE_URL = process.env.HF_URL;
 const HF_TOKEN = process.env.HF_API_TOKEN;
@@ -22,7 +37,7 @@ function generateCode() { return Math.floor(100000 + Math.random() * 900000).toS
 
 port = process.env.PORT || 3000;
 
-// ✅ Configure email transporter
+// Configure email transporter
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -32,10 +47,6 @@ const transporter = nodemailer.createTransport({
 });
 
 //#region ENDPOINTS
-
-
-
-
 
 //#region RESEND CODE
 // --- RESEND VERIFICATION CODE ---
@@ -82,22 +93,22 @@ app.post("/resend-reset", async (req, res) => {
   try {
     const safeEmail = sanitizeEmail(email);
 
-    // ✅ Check if there's an existing password reset request
+    // Check if there's an existing password reset request
     const snap = await db.ref(`password_resets/${safeEmail}`).once("value");
     if (!snap.exists())
       return res.status(404).json({ error: "No active password reset found." });
 
-    // ✅ Generate a new code and expiration (10 minutes)
+    // Generate a new code and expiration (10 minutes)
     const newCode = generateCode();
     const newExpires = Date.now() + 10 * 60 * 1000;
 
-    // ✅ Update the reset request
+    // Update the reset request
     await db.ref(`password_resets/${safeEmail}`).update({
       resetCode: newCode,
       expiresAt: newExpires,
     });
 
-    // ✅ Send email with the new code
+    // Send email with the new code
     await transporter.sendMail({
       from: `"Scamester" <${process.env.EMAIL_USER}>`,
       to: email,
@@ -112,10 +123,6 @@ app.post("/resend-reset", async (req, res) => {
   }
 });
 //#endregion
-
-
-
-
 
 //#region PASSWORD RESET
 app.post("/reset-password", async (req, res) => {
@@ -157,7 +164,6 @@ app.post("/reset-password", async (req, res) => {
 });
 //#endregion
 
-
 //#region VERIFICATION
 app.post("/reset-password/verify", async (req, res) => {
   const { email, code } = req.body;
@@ -167,22 +173,22 @@ app.post("/reset-password/verify", async (req, res) => {
   try {
     const safeEmail = sanitizeEmail(email);
 
-    // 🔎 Check if a reset request exists
+    // Check if a reset request exists
     const resetSnap = await db.ref(`password_resets/${safeEmail}`).once("value");
     if (!resetSnap.exists())
       return res.status(404).json({ error: "No reset request found." });
 
     const resetData = resetSnap.val();
 
-    // ⏳ Check expiration
+    // Check expiration
     if (Date.now() > resetData.expiresAt)
       return res.status(410).json({ error: "Reset code expired." });
 
-    // ✅ Check code match
+    // Check code match
     if (resetData.resetCode !== code)
       return res.status(401).json({ error: "Invalid reset code." });
 
-    // 👉 If everything is valid
+    // If everything is valid
     res.json({ status: "code_verified" });
   } catch (err) {
     console.error("Reset Code Verification Error:", err);
@@ -199,26 +205,26 @@ app.post("/reset-password/update", async (req, res) => {
   try {
     const safeEmail = sanitizeEmail(email);
 
-    // 🔎 Check if a valid reset request still exists
+    // Check if a valid reset request still exists
     const resetSnap = await db.ref(`password_resets/${safeEmail}`).once("value");
     if (!resetSnap.exists())
       return res.status(404).json({ error: "No active reset request found." });
 
     const resetData = resetSnap.val();
 
-    // ⏳ Double-check expiration
+    // Double-check expiration
     if (Date.now() > resetData.expiresAt)
       return res.status(410).json({ error: "Reset code expired." });
 
-    // 🔐 Hash the new password
+    // Hash the new password
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
-    // ✅ Update user's password
+    // Update user's password
     await db.ref(`users/${safeEmail}`).update({
       password: hashedPassword
     });
 
-    // 🗑️ Remove reset request to prevent reuse
+    // Remove reset request to prevent reuse
     await db.ref(`password_resets/${safeEmail}`).remove();
 
     res.json({ status: "password_updated" });
@@ -227,8 +233,6 @@ app.post("/reset-password/update", async (req, res) => {
     res.status(500).json({ error: "Internal server error." });
   }
 });
-
-
 
 // Move data from "pending" → "users" if code matches
 app.post("/verify", async (req, res) => {
@@ -302,9 +306,6 @@ app.post("/signup", async (req, res) => {
   }
 });
 
-// --- VERIFY CODE ---
-
-
 // --- LOGIN ---
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
@@ -319,15 +320,22 @@ app.post("/login", async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json({ error: "Invalid password." });
 
-    res.json({ status: "login_success" });
+    // Generate Firebase Custom Token on successful login
+    const uid = safeEmail; // Use the safe email as the unique identifier
+    const firebaseToken = await admin.auth().createCustomToken(uid);
+
+    // Send the token back to the Unity client
+    res.json({
+      status: "success",
+      token: firebaseToken,
+      message: "Login successful"
+    });
+
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ error: "Internal server error." });
   }
 });
-
-
-
 //#endregion
 
 //#region MODEL
@@ -386,7 +394,7 @@ app.get("/model/records", async (req, res) => {
 app.delete("/model/records/:id", async (req, res) => {
   try {
     const endpoint = `/records/${req.params.id}`;
-    const result = await callHuggingFace(endpoint, {});
+    const result = await callHuggingFace(endpoint, {}); // Note: DELETE might not need a body
     res.status(200).json(result);
   } catch (err) {
     console.error(err.response?.data || err.message);
@@ -395,11 +403,6 @@ app.delete("/model/records/:id", async (req, res) => {
 });
 //#endregion
 //#endregion
-
-app.post("/test", async (req, res) => {
-  res.json({ status: "login_success" });
-});
-
 
 async function callHuggingFace(endpoint, data) {
   const url = `${HF_BASE_URL}${endpoint}`;
